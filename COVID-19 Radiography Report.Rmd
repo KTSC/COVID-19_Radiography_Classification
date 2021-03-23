@@ -1,0 +1,1111 @@
+---
+title: "COVID-19 Radiography Classification with Convolutional Neural Networks"
+runningheader: "Radiography Classification with CNN" # only for pdf output
+subtitle: "Implementation using Keras" # only for html output
+author: "Klebert Toscano de S. Cintra"
+date: FALSE
+output:
+  tufte::tufte_handout:
+    citation_package: natbib
+    latex_engine: xelatex
+    toc: true
+  tufte::tufte_html:
+    toc: true
+  tufte::tufte_book:
+    citation_package: natbib
+    latex_engine: xelatex
+bibliography: skeleton.bib
+link-citations: yes
+---
+
+```{r setup, include=FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+library(tufte)
+options(knitr.duplicate.label = "allow")
+# invalidate cache when the tufte version changes
+knitr::opts_chunk$set(tidy = FALSE, cache.extra = packageVersion('tufte'))
+options(htmltools.dir.version = FALSE)
+```
+
+```{r Loading packages, message=FALSE, warning=FALSE, echo=FALSE, results="hide", cache=TRUE}
+library(ggplot2)
+library(lubridate)
+
+if(!require(extrafont)) install.packages("extrafont")
+library(extrafont)
+
+font_import()
+loadfonts(device = "pdf", quiet = TRUE)
+```
+
+
+```{r, echo=FALSE}
+cwd <- getwd()
+
+# For the data images
+image_location <- paste(cwd, "/COVID-19 Radiography Database", sep="")
+  # "https://github.com/KTSC/Recommender-System---MovieLens/tree/master/img/"
+
+# For the figures of the report
+img_path <- paste(getwd(),"/img", sep = "")
+```
+
+# Introduction
+
+## Overview
+
+The year 2019 will be remembered as the year the world discovered a
+disease that had impact on economies, politics, and changed priorities and habits for
+everyone, everywhere. The pandemic united the scientific community in the
+search for understanding of the causal agent (the coronavirus named
+[SARS-CoV-2](https://en.wikipedia.org/wiki/Severe_acute_respiratory_syndrome_coronavirus_2)),
+the [characteristics of the disease](https://en.wikipedia.org/wiki/Coronavirus_disease_2019) named
+COVID-19, its [physiopathology and transmission mechanisms](https://en.wikipedia.org/wiki/Transmission_of_COVID-19),
+[diagnosis](https://pubmed.ncbi.nlm.nih.gov/33126180/), and candidates
+for a cure, which is still ongoing,
+with several vaccines in development concomitantly and tested for efficacy and safety (as of March, 2021) with no definitive cure for the disease or immunization against the continuously mutating coronavirus.
+
+Nevertheless, there is treatment to minimize the damage caused by the virus. The early treatment for COVID-19 patients influences the prognosis of
+the disease and the severeness of its symptoms, hence the importance of
+an early diagnosis. The complication for this is that many diseases have
+similar symptoms[^1] and the differential diagnosis becomes quite
+difficult at times. The gold standard test for the presence of the virus
+in the organism and subsequent diagnosis is the RT-PCR, which detects
+the genetic material (RNA) of the virus. The test is not always
+available in test centers and clinics given the high demand, but a study
+by [Vieceli et al.(2020)](https://bjid.org.br/en-pdf-S1413867020300908)
+points to a strong predictive power of the association of leukocyte
+count, LDH[^2] levels, and chest radiographic abnormalities for the
+detection of COVID-19 with the Area under the ROC curve of **0.827**, **96% sensitivity** or recall and 73.5% specificity.
+
+[^1]: Other infectious agents that cause symptoms similar to COVID-19
+    are Influenza A, Influenza B, Influenza A H1N1 pdm09, influenza
+    H3N2, human para-influenza virus (HPIV), respiratory syncytial
+    virus, rhinovirus, adenovirus, human metapneumovirus, human
+    bocavirus, human coronavirus (HCoV), Chlamydia, Mycoplasma
+    pneumoniae and other that can be endemic for specific regions like
+    [Dengue](https://www.cdc.gov/dengue/healthcare-providers/dengue-or-covid.html).
+    For more information see [this review](https://bmcinfectdis.biomedcentral.com/articles/10.1186/s12879-020-05383-y)
+    and the list on the [British Medical Journal](https://bestpractice.bmj.com/topics/en-gb/3000201/differentials).
+
+[^2]: LDH is a predictor of inflammation in several lung diseases, and
+    most studies indicate it to be a good predictor of severity and ICU
+    admission.
+
+`r newthought('The main radiographic findings')` in patients with pneumonia who tested
+positive for SARS-Cov-2 include:
+
+**Ground-glass opacity**: signal that a substance other than air is
+filling the region, increasing the density. This was the most specific
+radiological finding among COVID-19 patients (65.6% of COVID-19 positive
+sample).
+
+**Lower lobe predominance**: concentration of the abnormalities in the
+lower region of the lungs (86.2% of COVID-19 positive sample).
+
+**Bilateral involvement**: both lungs present abnormalities (75.9% of
+COVID-19 positive sample).
+
+**Consolidation**: swelling or hardening of the soft tissue as a result
+of being filled with liquid instead of air (51.7% of COVID-19 positive
+sample).
+
+**Infiltration**: presence of a substance denser than air within the
+lung parenchyma, such as pus, blood or protein (44.8% of COVID-19
+positive sample).
+
+```{r, echo=FALSE, out.width="100%", fig.margin=TRUE, fig.cap= "Chest radiography of a patient showing the signs of viral pneumonia by SARS-Cov-2.", warning=FALSE, message=FALSE}
+
+knitr::include_graphics(file.path(img_path,"patient_G.jpeg"))
+```
+
+X-ray images of the lungs are indicated when risk factors for disease
+progression are present ([Rubin et al. 2020](https://www.sciencedirect.com/science/article/pii/S0012369220306735v)),
+but we work with the hypothesis that further investigation of images at
+all stages of the disease using neural networks can improve the
+specificity of the diagnosis and the early intervention that can change
+the final outcome.
+
+The best algorithms for categorization of images into classes, like the
+diagnosis that corresponds to the x-ray of a patient, are based on
+Convolutional Neural Networks. A Neural Network is a system where the
+inputs are automatically transformed in a way to learn output patterns.
+The metaphor with the biological neural networks found in the nervous
+system of animals relies on the neuron, that in biological nervous
+systems is the functional unit. In an artificial neural network it is an
+abstraction consisting of a mathematical function. The values in
+the data go through the following stages:\
+1) the function takes in values as inputs in a multidimensional data
+structure called a *tensor*;\
+2) aggregates the inputs into a unique value;\
+3) assigns to each one of the input sources a weight that represents its
+relevance to make a prediction;\
+4) the aggregated value is passed on to an activation function, which
+defines the final output for that particular neuron. The output is
+compared to a known correct value of the dimension the system is to
+predict, and the errors in the prediction are used to correct the
+weights of that neuron.
+
+```{r, echo = FALSE, out.width = "100%", fig.cap = "Illustration of an Artificial Neuron with representation of inputs, aggregation of inputs and production of an output by the activation function. ", warning=FALSE, message=FALSE, cache=TRUE}
+
+knitr::include_graphics(file.path(img_path,"NN_units_basic.png"))
+```
+
+Neurons can be organized in a great variety of ways, and the process of
+adjusting all the parameters of the chain of functions is called
+*training*, borrowing a nomenclature used in cognitive psychology and
+learning neuroscience. The architectures proposed for this analysis has neurons
+that use convolutions to learn weights for the preceding layer of
+inputs. They are called *filters* or *kernels* and usually have small
+receptive fields, meaning they use a small set of values of the larger
+array of inputs. They are convolved across the input tensor computing
+the dot product to produce a 2D *activation map* as output. That map
+represents a *feature*, and will be passed forward to the next layer of
+neurons, where higher and higher levels of abstraction will be
+represented, in such a way that the spatial dependency is lost. 
+
+
+```{r, echo = FALSE, out.width = "140%", fig.cap = "Representation of a convolutional layer. The array with the normalized values of each pixel (yellow) is convolved with the filters (pink). The aggregated results are the dependent variables to the activation function (blue) which will generate the output for that convolutional layer.", warning=FALSE, message=FALSE, cache=TRUE}
+
+knitr::include_graphics(file.path(img_path,"Layer.png"))
+```
+
+
+Some very desirable attributes emerge from this type of processing of
+data. First, there is no need to store values of the result of the
+interaction of each input and output like in a fully connected network.
+Instead, the filter, smaller than the input, will learn relevant
+information in fewer values. This produces a more economical algorithm,
+with broader applications of the parameters learned, as the layers
+represent levels of abstraction that can be applied to other spatial
+locations in the image, that can also be transferred to other data sets,
+and other types of output.
+
+## Comparison: Biological vs Artificial Vision
+
+`r newthought('The visual system')` in animals has neurons that take in
+some information/stimuli and produce a response. Much similarly, the
+functions of artificial neural networks transform the data. In the case
+of the human vision, photons go through the eye and reach the retina,
+which is basically a flat layer of neurons with specific molecules that
+change in the presence of light, and provoke electrical variations in
+the voltage of the cell. This perturbation of the electrical state are
+like the different values you can find in the pixels of a picture. By
+itself, without context or relationships with other levels of
+abstraction, a pixel has no meaning. The same way, a neuron firing in
+the eye is not "vision". But when that raw particle of information is
+sent to the back of the brain, it reaches layers of neurons organized in
+the same topography as the retina, and the spatial relationships of the
+origin of those impulses are preserved until that point. Those neurons
+exchange information between them, and send signals forward to another
+layer of neurons which don't fire for a photon in the eye. Instead, they
+fire when a line of neurons in the previous layer has fired together in
+a specific angle. Now we have code for lines, borders, and such. The
+complexity of information increases at each layer up to the point where
+you have populations of neurons that respond to specific colors,
+textures, shapes, positions in the space, semantic meaning, familiar
+faces, and can provoke complex and systemic reactions like the fear of a
+spider, or catching a ball mid air.
+
+
+The artificial neural networks used here also have simpler features at the lower layers,
+encoding lines, curves, angles, shapes, spatial frequencies, and the
+goal is to make them learn higher and higher levels of abstraction up to
+a point where the radiography of a lung turned into a matrix of pixels
+can be "interpreted" as just a normal image of a healthy lung or a
+diagnosis for COVID-19 or other types of pneumonia. All that should
+happen without a formal definition of the radiographical signs mentioned
+before. In other words, we don't have to code an algorithm to detect
+lung opacity due to the presence of liquid, inflammation of the airways,
+or any specifics of the image that demands specialized knowledge in
+pneumology to be detected.
+
+
+
+
+## Executive Summary
+
+`r newthought('The Goal')` of this project is to apply Convolutional
+Neural Networks to a dataset of chest radiographies of COVID-19 infected
+patients, normal subjects, and patients with other types of viral
+pneumoniae and test if the accuracy is improved when compared to the
+association of laboratory tests and traditional radiological analysis
+used in the aforementioned
+[study](https://bjid.org.br/en-pdf-S1413867020300908).
+
+The procedure proposed here includes the following steps:
+
+1.  Data acquisition. Download and partition of the data with 10% of
+    observations for test and 90% for training of the algorithms.
+2.  Exploratory Data Analysis (EDA) and Visualization.\
+3.  Methods for the analysis.
+4.  Modeling approach 1 - Convolutional Neural Network.
+5.  Modeling approach 2 - Transfer Learning - NASNet.
+    (NASNetLarge).
+6.  Results - Evaluation of models and comparison.
+7.  Conclusion and final considerations.
+
+# Data Acquisition
+
+```{r Download, echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE, results="hide"}
+##########################################################
+# Download data set and split into train and validation set
+##########################################################
+
+
+
+# Get the working directory
+cwd <- getwd()
+
+
+# Loading the libraries (installing if required)
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+if(!require(tensorflow)) install.packages("tensorflow", repos = "http://cran.us.r-project.org")
+if(!require(keras)) install.packages("keras", repos = "http://cran.us.r-project.org")
+if(!require(reticulate)) install.packages("reticulate", repos = "http://cran.us.r-project.org")
+
+# Package for image processing and analysis. 
+if(!require(BiocManager)) install.packages("BiocManager", repos = "http://cran.us.r-project.org")
+BiocManager::install("EBImage")
+
+library(reticulate)
+library(tidyverse)
+library(caret)
+library(data.table)
+library(ggplot2)
+library(tensorflow)
+library(keras)
+library(EBImage)
+library(tidyverse)
+
+
+
+# Download the dataset linked to this project at https://drive.google.com/drive/folders/1lBdhIzBnOaHjFkAeI81cqELxcm7E2TZY?usp=sharing
+
+
+
+# Set the location and get the name of the directories with the images corresponding to the classes
+# For this specific dataset the code below will assign the train and validation folders (with 90% and 10% of the dataset respectively)
+# to the variables "train_dir" and "test_dir"
+
+image_location <- paste(getwd(), "/COVID-19 Radiography Database", sep="") # smaller dataset
+
+
+
+# for the case where all data is separated by class, but no train/test split done.
+# classes_dir <- list.dirs(path = image_location, full.names = TRUE, recursive = FALSE)
+# classes_dir
+
+
+# For the case where train and test are in separate directories already: 
+split_dir <- list.dirs(path = image_location, full.names = TRUE, recursive = FALSE)
+
+test_dir <- split_dir[1] # in alphabetical order, test is the first directory
+train_dir <- split_dir[2]
+
+# train_dir
+classes_dir_train <- list.dirs(path = train_dir, full.names = TRUE, recursive = FALSE)
+classes_labels <- c("COVID-19", "Normal","Other Viral Pneumoniae")
+classes_dir_test <- list.dirs(path = test_dir, full.names = TRUE, recursive = FALSE)
+
+# Get the number of output classes
+# n_classes <- length(classes_dir)
+# n_classes
+
+
+# Get the size of the entire data set
+
+dataset_size <- length(list.files(path = image_location, 
+                                  full.names = TRUE, 
+                                  recursive = TRUE))
+
+
+n_train_cov <- length(list.files(path = classes_dir_train[1], 
+                                 full.names = TRUE, 
+                                 recursive = TRUE))
+
+n_train_nor <- length(list.files(path = classes_dir_train[2], 
+                                 full.names = TRUE, 
+                                 recursive = TRUE))
+
+n_train_vir <- length(list.files(path = classes_dir_train[3], 
+                                 full.names = TRUE, 
+                                 recursive = TRUE))
+
+n_test_cov <- length(list.files(path = classes_dir_test[1], 
+                                 full.names = TRUE, 
+                                 recursive = TRUE))
+
+n_test_nor <- length(list.files(path = classes_dir_test[2], 
+                                 full.names = TRUE, 
+                                 recursive = TRUE))
+
+n_test_vir <- length(list.files(path = classes_dir_test[3], 
+                                 full.names = TRUE, 
+                                 recursive = TRUE))
+
+
+train_count <- c(n_train_cov, n_train_nor, n_train_vir)
+test_count <- c(n_test_cov, n_test_nor, n_test_vir)
+
+# count_bind <- cbind(train_count, test_count)
+sum(train_count)
+
+# Create a data.frame for later visualization of the classes in the train set
+files_count_train <- data.frame(Diagnosis = classes_labels,
+                                Count = train_count)
+
+# Create a data.frame for later visualization of the classes in the test set
+files_count_test <- data.frame(Diagnosis = classes_labels,
+                               Count = test_count)
+
+# Create a data.frame for later visualization of the classes in both partitions
+files_count <- data.frame( Partition = rep(c("Train", "Test"), each = 3),
+                           Diagnosis = rep(classes_labels, 2),
+                           Count = c(train_count, test_count), 
+                           label_y_position = cumsum(c(train_count, test_count)))
+
+
+```
+
+The data was assembled and prepared by a team of researchers from Qatar
+University, Doha, Qatar, and the University of Dhaka, Bangladesh along
+with their collaborators from Pakistan and Malaysia in collaboration
+with medical doctors. The data sources^[Further information on the methods and data sources are available in [Chowdhury et al., 2020](https://ieeexplore.ieee.org/document/9144185) and [Rahman et al., 2020](https://arxiv.org/pdf/2012.02238.pdf).] are:
+
+
+**Italian Society of Medical and Interventional Radiology (SIRM) COVID-19 DATABASE:**
+[SIRM COVID-19 database](https://www.sirm.org/category/senza-categoria/covid-19/)
+reports 384 COVID-19 positive radiographic images (CXR and CT) with
+varying resolution. Out of 384 radiographic images, 94 images are chest
+X-ray images and 290 images are lung CT images. This database is updated
+in a random manner and until 10th May 2020, there were 71 confirmed
+COVID-19 cases were reported in this database.
+
+**Novel Corona Virus 2019 Dataset:**
+Joseph Paul Cohen and Paul Morrison and Lan Dao have created a [public database in GitHub](https://github.com/ieee8023/covid-chestxray-dataset) 
+by collecting 319 radiographic images of COVID-19, Middle East
+respiratory syndrome (MERS), Severe acute respiratory syndrome (SARS)
+and ARDS from the published articles and online resources. In this
+database, they have collected 250 COVID-19 positive chest X-ray images
+and 25 COVID-19 positive lung CT images with varying image resolutions.
+However, in this study, authors have considered 134 COVID-19 positive
+chest X-ray images, which are different from the images of the database
+that the authors created from different articles.
+
+**COVID-19 positive chest x-ray images from different articles:**
+GitHub database has encouraged the authors to look into the literature
+and interestingly more than 1200 articles were published in less than
+two-months of period. Authors have observed that the GitHub database has
+not collected most of the X-ray and CT images rather a small number of
+images were in that database. Moreover, the images in SIRM and GitHub
+database are in random size depending on the X-ray machine resolution
+and the articles from which it was taken. Therefore, authors have
+carried out a tedious task of collecting and indexing the X-ray and CT
+images from all the recently publicly available articles and online
+sources. These articles and the radiographic images were then compared
+with the GitHub database to avoid duplication. Authors managed to
+collect 60 COVID-19 positive chest X-ray images from [43 recently published articles](https://www.kaggle.com/tawsifurrahman/covid19-radiography-database),
+which were not listed in the GitHub database and 32 positive chest x-ray
+images from [Radiopaedia](https://radiopaedia.org/search?lang=us&page=4&q=covid+19&scope=all&utf8=%E2%9C%93),
+which were not listed in the GitHub database.
+
+**COVID-19 Chest imaging at thread reader:**
+A physician has shared 103 images for 50 different cases with varying
+resolution from his hospital in Spain to the [Chest imaging at thread reader](https://threadreaderapp.com/thread/1243928581983670272.html).
+Images from RSNA-Pneumonia-Detection-Challenge database along with the
+Chest X-ray Images database from Kaggle were used to create the normal
+and viral pneumonia sub-databases of 1579 and 1485 X-ray images
+respectively.
+
+**RSNA-Pneumonia-Detection-Challenge:**
+In 2018, Radiology Society of North America (RSNA) organized an
+artificial intelligence (AI) challenge to detect pneumonia from the
+chest X-ray images. In this
+[database](https://ieeexplore.ieee.org/document/8099852), normal chest
+X-ray with no lung infection and non-COVID pneumonia images were
+available.
+
+**Chest X-Ray Images (pneumonia):**
+[Kaggle chest X-ray database](https://www.kaggle.com/paultimothymooney/chest-xray-pneumonia)
+is a very popular database, which has 5856 chest X-ray images of normal,
+viral and bacterial pneumonia with resolution varying from 400p to
+2000p. It contains images of patients affected by pneumonia (bacterial
+and viral) and from normal subjects. Chest X-ray images for normal and
+viral pneumonia were used from this database to create the new database.
+
+
+# Exploratory Data Analysis (EDA) and Visualization.
+
+The data consists of chest X-ray images (radiographies) for COVID-19
+positive cases (1200), Normal images with no
+infection (1341) and Viral Pneumonia (1345) images, that come in
+different sizes. The plot below shows the proportion of the dataset for each class, with no particular benefit for a model bias to any of the classes.
+
+
+
+```{r fig-margin-splittime, echo = FALSE, fig.margin=TRUE, fig.cap= "Train and Test partitions of the data set.", fig.show='hold', fig.width=4.5, fig.height=3, warning=FALSE, message=FALSE, cache=TRUE}
+
+# Barplot of the frequency of images for each class in the train set
+ggplot(files_count_train, aes(x = Diagnosis, y = Count, fill = Diagnosis)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Train Set") +
+  geom_text(aes(y = Count, label = Count), 
+            vjust=1.6, 
+            color = "white")+
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90, hjust = 1)) +
+  theme_minimal(base_size = 8, base_family = "Caviar Dreams")
+
+# Barplot of the frequency of images for each class in the test set
+ggplot(files_count_test, aes(x = Diagnosis, y = Count, fill = Diagnosis)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Test Set") +
+  geom_text(aes(y = Count, label = Count), 
+            vjust=1.6, 
+            color = "white")+
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90, hjust = 1)) +
+  theme_minimal(base_size = 8, base_family = "Caviar Dreams")
+
+
+```
+
+The assignment of images to train the networks and later test its performance
+ is automatically done by
+[keras](https://keras.rstudio.com/index.html), which is the library
+chosen for this particular project, running with a tensorflow backend. The partition for training was 90% of the data, with the remaining 10% used for testing. 10% of the train set was used for validation. 
+
+```{r, echo=FALSE, fig.width=7, fig.height=7, message=FALSE, warning=FALSE, fig.align='left', cache=TRUE}
+
+ggplot(files_count, aes(x = Partition, y = Count, fill = Diagnosis)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(y = label_y_position, label = Count), 
+            vjust=1.6, 
+            color = "white") + 
+  theme_minimal(base_size = 14, base_family = "Caviar Dreams")
+
+
+```
+
+
+The images were subject to **data augmentation** where random alterations
+within a defined range were performed in order to better generalize to
+other data sets instead of learning particular features of the images
+available. Fortunately, radiographies are images taken under protocols
+defined to have standards for comparison between services and make the
+images interpretable by healthcare professionals, so the type of
+structures and positioning present in the images are fairly stable. In
+these conditions the alterations performed during augmentation must
+consider these protocols and respect constraints that come from
+knowledge in anatomy and clinical evidence. The ones performed were the
+following:
+
+**Rotation**: 5 degrees of range, given the positioning of the patient
+is not free during the exam.
+
+**Height and Width distortions**: 5% distortions were done in order not
+to stretch so much the proportions of the thoracic structures.
+
+**Zoom**: Zoom variations in the range of 10%.
+
+**Normalization of values**: The values in the matrices of data
+extracted from the pixels in the image files range from 1 to 255, and
+for better performance with the algorithm these values were normalized
+to range between 0 and 1.
+
+```{r, echo = FALSE, out.width = "100%", fig.margin = TRUE, fig.cap = "Image arrays are resized and the values are normalized for better training performance.", fig.width=1.5, message=FALSE, echo=FALSE}
+
+knitr::include_graphics(file.path(img_path,"image_array.png"))
+```
+
+No vertical or horizontal flipping of the images were applied, despite
+being a common practice in image analysis. In the case of radiographies,
+the anatomical structures are not all symmetrical, and these alterations
+would not be natural, and would only add an unnecessary source of variability. 
+
+
+
+# Methods/Analysis 
+
+Two Convolutional Neural Networks were compared. They were chosen because of their dissimilarities. 
+The first model's architecture was humanly defined, while the second was designed with several machine learning techniques autonomously. 
+The first model was trained from scratch, while the second uses the architecture and weights learned previously and transferred to the model shown here 
+for our classification. Finally, the first model is simple and succinct, while the second is quite complex, with intricate details and is the state-of-the-art network for artificial vision, outperforming all the other humanly define models to date. 
+
+
+
+
+```{r Model1, echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE, results="hide"}
+
+# Size of the training data set (just an integer as output)
+n_samples <- length(list.files(path = train_dir, 
+                        full.names = TRUE, 
+                        recursive = TRUE))
+
+
+# Set the dimensions for the transformation to be applied to all images, which can come in several formats
+
+img_height <- 331
+img_width <- 331
+target_size <- c(img_height, img_width)
+
+
+# Set the number of color channels. As the Radiographies are in grayscale, we set it to 1. 
+channels <- 1 
+
+
+
+
+
+# Take a look at one of the images: 
+
+one_image_path <- list.files(path = classes_dir_train[2], 
+                             full.names = TRUE, 
+                             recursive = TRUE)[1]
+
+
+
+
+# We can use EBImage to visualize the files. 
+# Function call to read one of the images named in the objects with the classes 
+radiography_view <- EBImage::readImage(one_image_path[1])
+
+# Display the values of the first 5 rows and 6 columns read above 
+print(max(radiography_view))
+
+# The images are grayscale already, hence only one channel of color. 
+# In the case of image 1 (a covid-19 patient) it's a 256x256 array of depth 1. 
+EBImage::getFrames(radiography_view, type="total")
+
+# Display the image
+EBImage::display(radiography_view)
+
+
+##########################################################
+# Create the image generators for keras
+##########################################################
+
+
+
+# Keras loads the pictures from a directory or a URL. The function below loads, and can also resize the picture and normalize the values. 
+# This dataset is already normalized so there's no need to perform normalization. Still I comment below the data augmentation parameters.  
+train_data_gen <- keras::image_data_generator(
+  rotation_range = 5,
+  width_shift_range = 0.05,
+  height_shift_range = 0.05,
+  zoom_range = 0.1,
+  fill_mode = "wrap",
+  horizontal_flip = FALSE,
+  vertical_flip = FALSE,
+  rescale = 1./255,
+  validation_split = 0.1 # creates a subset of data ("training" or "validation") if this parameter is set.
+)
+
+
+# Also for the validation data set, only for normalization
+valid_data_gen <- keras::image_data_generator(
+  rescale = 1./255, 
+  validation_split = 0.1
+)
+
+
+test_data_gen <- keras::image_data_generator(
+  rescale = 1./255, 
+)
+
+
+# Parameters for training
+
+batch_size <- 32
+epochs <- 50
+
+
+
+# The images generated below are for the first model, which takes in grayscale images, so "_BW" is added to each name in comparison to the other images that will come next. 
+
+
+
+
+train_images_BW <- flow_images_from_directory(
+  directory = train_dir,
+  generator = train_data_gen,
+  target_size = target_size,
+  color_mode = "grayscale",
+  class_mode = "categorical",
+  batch_size = batch_size,
+  shuffle = TRUE,
+  seed = NULL,
+  save_to_dir = NULL,
+  save_prefix = "",
+  save_format = "png",
+  follow_links = FALSE,
+  subset = "training",
+  interpolation = "bicubic"
+)
+
+valid_images_BW <- flow_images_from_directory(
+  directory = train_dir,
+  generator = valid_data_gen,
+  target_size = target_size,
+  color_mode = "grayscale",
+  class_mode = "categorical",
+  batch_size = batch_size,
+  shuffle = TRUE,
+  seed = NULL,
+  save_to_dir = NULL,
+  save_prefix = "",
+  save_format = "png",
+  follow_links = FALSE,
+  subset = "validation",
+  interpolation = "bicubic"
+)
+
+test_images_BW <- flow_images_from_directory(
+  directory = test_dir,
+  generator = test_data_gen,
+  target_size = target_size,
+  color_mode = "grayscale",
+  class_mode = "categorical",
+  batch_size = batch_size,
+  shuffle = TRUE,
+  seed = NULL,
+  save_to_dir = NULL,
+  save_prefix = "",
+  save_format = "png",
+  follow_links = FALSE,
+  interpolation = "bicubic"
+)
+
+
+##########################################################
+# Define model 1
+##########################################################
+
+
+input_shape <- c(img_height, img_width, channels)
+
+
+model_x_ray <- keras::keras_model_sequential()
+
+model_x_ray %>% 
+  keras::layer_conv_2d(filters = 40,
+                       kernel_size = c(3,3), 
+                       activation = "relu", 
+                       input_shape = input_shape) %>% #  # c(100,100,1)
+  keras::layer_conv_2d(filters = 40,
+                kernel_size = c(3,3), 
+                activation = "relu") %>%
+  keras::layer_max_pooling_2d(pool_size = c(3,3)) %>%
+  keras::layer_dropout(rate = 0.2) %>%
+  keras::layer_conv_2d(filters = 80,
+                kernel_size = c(3,3), 
+                activation = "relu") %>%
+  keras::layer_conv_2d(filters = 80, 
+                kernel_size = c(3,3), 
+                activation = "relu") %>%
+  keras::layer_max_pooling_2d(pool_size = c(3,3)) %>%
+  keras::layer_dropout(rate = 0.2) %>%
+  keras::layer_flatten() %>%
+  keras::layer_dense(units = 256, 
+              activation = "relu") %>%
+  keras::layer_dropout(rate = 0.2) %>%
+  keras::layer_dense(units = 3, 
+              activation = "softmax") %>%
+  keras::compile(loss = "categorical_crossentropy", 
+          optimizer = keras::optimizer_adam(lr = 0.0005), 
+          metrics = list(tf$keras$metrics$Accuracy, 
+                         tf$keras$metrics$Precision,
+                         tf$keras$metrics$Recall, 
+                         tf$keras$metrics$AUC
+                         )
+          )
+
+
+# Fit Model 1
+
+
+# calculate a good number of steps per epoch by dividing the validation set by the batch size. 
+train_samples <- train_images_BW$n
+
+# steps_per_epoch <- 3498%/%batch_size # 3103
+steps_per_epoch <- as.integer(train_samples%/%batch_size)
+
+# as the validation data is also a generator, calculate the validation steps similarly, but with the validation set
+valid_samples <- valid_images_BW$n
+
+# validation_steps <- 388%/%batch_size # 343
+validation_steps <- as.integer(valid_samples%/%batch_size)
+
+
+
+
+
+
+################### Train the model #########################
+
+# Set the patience and minimum delta for early stopping
+
+
+patience <- 8
+min_delta <- 0.01
+
+
+
+history_x_ray <- model_x_ray %>% 
+  keras::fit_generator(generator = train_images,
+                       steps_per_epoch = steps_per_epoch,
+                       epochs = epochs, 
+                       validation_data = valid_images, 
+                       validation_steps = validation_steps, 
+                       callbacks = callback_early_stopping( 
+                         monitor = "val_accuracy",
+                         min_delta = min_delta,
+                         patience = patience,
+                         verbose = 0,
+                         mode = c("auto"),
+                         baseline = NULL
+                         )
+                       )
+
+
+
+save_model_weights_tf(model_x_ray, cwd)
+
+model_path_x_ray <- paste(getwd(), "/model_x_ray.h5", sep="")
+
+model_x_ray <- load_model_tf(model_path_x_ray) %>% load_model_weights_tf(model_path_x_ray)
+
+# To view the summary of the model
+
+model_x_ray
+
+
+
+
+history_df <- as.data.frame(model_x_ray$history$metrics) 
+
+str(history_df)
+
+df_out <- history$metrics %>% 
+  {data.frame(accuracy = .$accuracy[epochs], val_accuracy = .$val_accuracy[epochs], elapsed_time = as.integer(Sys.time()) - as.integer(start))}
+
+
+
+weights <- keras::get_weights(model_x_ray)
+
+
+
+# Evaluate the model. Outputs are loss, acc (accuracy), precision_1, recall_1, and auc_1 
+
+Evaluate_x_ray <- model_x_ray %>% evaluate_generator(
+  test_images_BW, 
+  steps = as.integer(test_images_BW$n %/% batch_size)
+  )
+
+
+
+
+
+# Add the F1 score to the metrics for this Convolutional Neural Network
+CNN_metrics <- c(Evaluate_x_ray, setNames((2 * (Evaluate_x_ray[3] * Evaluate_x_ray[4]) / (Evaluate_x_ray[3] + Evaluate_x_ray[4])), "F1_score"))
+
+
+
+# Get predictions for the test set
+
+y_pred_x_ray <- model_x_ray %>% predict_generator(
+  test_images_BW, 
+  steps = as.integer(test_images_BW$n %/% batch_size), 
+) %>%
+  as.data.frame()
+
+colnames(y_pred_x_ray) <- classes_labels
+
+
+
+```
+
+The images were loaded  for training in batches of `r batch_size` files, and ran for a maximum of `r epochs` epochs. To prevent overfitting to the train set, training was stopped if after `r patience` consecutive epochs the validation accuracy didn't improve by at least `r min_delta * 100`%. 
+
+\pagebreak
+
+# Model 1 - Convolutional Neural Network
+
+The architecture proposed for the first Convolutional Neural Network model consists of 4 convolutional layers as previously described, added a _MaxPool2D_ 
+unit layers 2 and 4. Then the arrays are reshaped to a vector (flattened), and fed to a fully connected layer of 256 neurons with ReLU activation, followed by a softmax unit that will provide the prediction for a class. 
+
+```{r, echo = FALSE, out.width = "140%", fig.cap = "Architecture of Model 1 - Convolutional Neural Network used here.", warning=FALSE, message=FALSE, cache=TRUE}
+
+knitr::include_graphics(file.path(img_path,"cnn.png"))
+```
+
+The model contains 25,190,427 parameters, all of which were trained specifically with the data set presented here. The performance on the test set can be seen in the results section.  
+
+
+
+\pagebreak
+
+# Model 2 - Transfer Learning - NASNet
+
+```{r Model2, echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE, results="hide"}
+
+
+library(reticulate)
+library(tidyverse)
+library(caret)
+library(data.table)
+library(ggplot2)
+library(tensorflow)
+library(keras)
+library(EBImage)
+
+
+##########################################################
+# Define model 2 using NASNetLarge network
+##########################################################
+
+
+
+# Preparation of the images with now 3 layers for color since that's the shape accepted by the NASNetLarge model. 
+
+# Update the value for "channels"
+channels <- 3 
+
+
+train_images <- flow_images_from_directory(
+  directory = train_dir,
+  generator = train_data_gen,
+  target_size = target_size,
+  color_mode = "rgb",
+  class_mode = "categorical",
+  batch_size = batch_size,
+  shuffle = TRUE,
+  seed = NULL,
+  save_to_dir = NULL,
+  save_prefix = "",
+  save_format = "png",
+  follow_links = FALSE,
+  subset = "training",
+  interpolation = "bicubic"
+)
+
+valid_images <- flow_images_from_directory(
+  directory = train_dir,
+  generator = valid_data_gen,
+  target_size = target_size,
+  color_mode = "rgb",
+  class_mode = "categorical",
+  batch_size = batch_size,
+  shuffle = TRUE,
+  seed = NULL,
+  save_to_dir = NULL,
+  save_prefix = "",
+  save_format = "png",
+  follow_links = FALSE,
+  subset = "validation",
+  interpolation = "bicubic"
+)
+
+test_images <- flow_images_from_directory(
+  directory = test_dir,
+  generator = test_data_gen,
+  target_size = target_size,
+  color_mode = "rgb",
+  class_mode = "categorical",
+  batch_size = batch_size,
+  shuffle = TRUE,
+  seed = NULL,
+  save_to_dir = NULL,
+  save_prefix = "",
+  save_format = "png",
+  follow_links = FALSE,
+  interpolation = "bicubic"
+)
+
+
+
+# Loading the NASNetLarge model and weights trained on the imagenet dataset. 
+
+nasnetlarge <- application_nasnetlarge(
+  include_top = FALSE, 
+  weights = "imagenet"
+)
+
+
+################### New layers #########################
+## add custom layers on top of the pretrained network
+predictions <- nasnetlarge$output %>% 
+  layer_global_average_pooling_2d(trainable = TRUE) %>% 
+  layer_dense(64, trainable = TRUE) %>%
+  layer_activation("relu", trainable = TRUE) %>%
+  layer_dropout(0.2, trainable = TRUE) %>%
+  layer_dense(3, trainable=TRUE) %>%    ## important to adapt to fit the 3 classes in the dataset!
+  layer_activation("softmax", trainable=TRUE)
+
+## Make sure the layers from the pretrained model are not going to be trained again.
+for (layer in nasnetlarge$layers)
+  layer$trainable <- FALSE
+
+# The new model to be trained:
+model_x_ray_nasnetlarge <- keras_model(inputs = nasnetlarge$input, 
+                     outputs = predictions) 
+
+
+
+################### Compile the model #########################
+model_x_ray_nasnetlarge %>% keras::compile(
+  loss = "categorical_crossentropy", 
+  optimizer = keras::optimizer_adam(lr = 0.0005), 
+  metrics = c(tf$keras$metrics$Accuracy, 
+                 tf$keras$metrics$Precision,
+                 tf$keras$metrics$Recall, 
+                 tf$keras$metrics$AUC
+  )
+)
+
+
+################### Train the model #########################
+
+history <- model_x_ray_nasnetlarge %>% fit_generator(
+  train_images,
+  steps_per_epoch = as.integer(train_samples%/%batch_size), 
+  epochs = epochs, 
+  validation_data = valid_images,
+  validation_steps = as.integer(valid_samples%/%batch_size),
+  verbose=2, 
+  callbacks = callback_early_stopping(
+    monitor = "val_accuracy",
+    min_delta = min_delta,
+    patience = patience,
+    mode = c("auto"),
+    baseline = NULL
+  )
+)
+
+
+
+
+save_model_weights_tf(model_x_ray_nasnetlarge, cwd)
+
+model_path <- paste(getwd(), "/model_x_ray_nasnetlarge.h5", sep="")
+
+model_x_ray_nasnetlarge <- load_model_tf(model_path) %>% 
+  load_model_weights_tf(model_path)
+
+# To view the summary of the model
+# model_x_ray_nasnetlarge
+
+
+history_df_nas <- as.data.frame(model_x_ray_nasnetlarge) 
+
+
+weights_nas <- keras::get_weights(model_x_ray_nasnetlarge)
+
+
+
+# Evaluate the model. Outputs are loss, acc (accuracy), precision_1, recall_1, and auc_1 
+
+Evaluate_nas <- model_x_ray_nasnetlarge %>% 
+  evaluate_generator(
+  test_images, 
+  steps = as.integer(test_images$n %/% batch_size)
+)
+
+
+
+# Add the F1 score to the metrics
+NAS_metrics <- c(Evaluate_nas, setNames(2 * (Evaluate_nas[3] * Evaluate_nas[4]) / (Evaluate_nas[3] + Evaluate_nas[4]), "F1_score"))
+
+
+model_comparison <- as.data.frame(rbind(NAS_metrics, CNN_metrics))
+
+
+
+
+
+```
+
+
+The first model presented was completely defined and designed by the author of this report. What makes this second model interesting is that the architecture was also defined using machine learning techniques, namely reinforcement learning. It was a Neural Architecture Search (NAS)^[Based on the neuroscientific literature, the way the connections are tried and reinforced based on the outcomes of the final outputs of the network seems to be the most similar to how the biological neural networks are wired for learning once the basic structural pathways are organized according to code on the DNA of a particular species and for that reason this network was chosen for this project.] performed via training on more than a million images from the [ImageNet database](www.image-net.org). 
+
+The layers in the network consist of Convolutional units, but the method for the choice of the filter sizes, the number of filters, and connectivity used Recurrent Neural Networks to find the best sequence of layers. Their shapes, and aggregations definitions were based on the activation of a Softmax activation. Then the weights for the convolutional layers could be trained using images. The networks that performed better during this architecture definition received the reinforcement for the next iteration of training, which was the accuracy of that architecture on the validation dataset. As a result, the network has learned rich feature representations for a wide range of images. It trained using 800 GPUs simultaneously, to train 12800 models which were evaluated on their validation accuracy after running for 50 epochs each. 
+
+What we did here was to take the weights learned by this network and replaced the final layer with new ones to use that massive training to the goal of classifying the dataset. The final architecture of the model has 85,175,125 parameters, of which 258,307 were trained with the data set of X-ray images and the remaining 84,916,818 were transferred from the training on the imagenet data. The image input size must be 331 by 331, and the output was defined to be the 3 diagnosis classes. 
+
+```{r, echo = FALSE, out.width = "140%", fig.cap = "Architecture of Model 2 - NASNet architecture and weights (imagenet) transfered for this diagnosis classification.", warning=FALSE, message=FALSE, cache=TRUE}
+
+knitr::include_graphics(file.path(img_path,"nas.png"))
+```
+
+The performance on the test set can be seen in the results section.
+
+
+
+\pagebreak
+
+# Results
+
+The models predicted a ${class_i}$ for each image. The predictions could be of 4 categories: 
+
+
+$TP_{class_i}$ = True Positive, the correct predictions of the $class_i$.
+
+$TN_{class_i}$ = True Negative, correct predictions of the absence of $class_i$.
+
+$FP_{class_i}$ = False Positive, erroneous predictions of the $class_i$.
+
+$FN_{class_i}$ = False Negative, erroneous predictions of the absence of $class_i$. 
+
+
+Based on the proportions of these outcomes, the following metrics were generated, and were used to compare the models: 
+
+
+$$Accuracy_{class_i} = \frac{TP_{class_i} + TN_{class_i}}{TP_{class_i} + TN_{class_i} + FP_{class_i} + FN_{class_i}}$$
+
+$$Precision_{class_i} = \frac{TP_{class_i}}{TP_{class_i} + FP_{class_i}}$$
+
+$$Recall_{class_i} = \frac{TP_{class_i}}{TP_{class_i} + FN_{class_i}}$$
+
+$$F1\_score = 2 \frac{Precision \times Sensitivity}{Precision + Sensitivity}$$
+
+$$AUC_{f} = {\frac {\sum _{t_{0}\in {\mathcal {D}}^{0}}\sum _{t_{1}\in {\mathcal {D}}^{1}}{\textbf {1}}[f(t_{0})<f(t_{1})]}{|{\mathcal {D}}^{0}|\cdot |{\mathcal {D}}^{1}|}}$$
+where:
+
+${\textstyle {\textbf {1}}[f(t_{0})<f(t_{1})]}$ represents the _indicator function_ which returns 1 if the inequality is true and 0 otherwise, 
+
+${\mathcal {D}}^{0}$ = set of negative examples (not $class_i$).
+
+${\mathcal {D}}^{1}$ = set of positive examples (belongs to $class_i$).
+
+
+
+The table below shows the metrics for both models. 
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
+knitr::kable(
+  model_comparison, align = 'c', digits = round(4)
+)
+```
+
+The simpler Model 1 outperformed Model 2 and that result is counterintuitive at first. Further steps can be taken to improve the performance of Model 2 to reflect the reputation NASNet has in accuracy. Nonetheless, both models show surprisingly good accuracy levels, being above human performance.  Also, the sensitivity to detection of COVID-19 using **only the radiography images** was `r round(CNN_metrics[4], 4) * 100`% for Model 1 and `r round(NAS_metrics[4], 4) * 100`% for Model 2. 
+
+They are comparable to that shown by [Vieceli et al.(2020)](https://bjid.org.br/en-pdf-S1413867020300908)
+using 2 laboratory tests and chest radiographies (**96% Recall** and **AUC = 0.827**). The ability to perform the discrimination between the classes measured by the AUC metrics^[The AUC metric was calculated separately for each of the 3 classes, and the results were averaged for a unified score for the model.] indicates the CNN models also performed better than that study.  
+
+
+# Conclusion
+
+
+The training of CNNs can be rather expensive and time consuming, but the results seem to be worth the investment. The models presented here outperformed the metrics in clinical studies where the classification of COVID-19 diagnosis was done with blood tests that take longer, and need more apparatus for collection and analysis than the radiography. It is possible, after further tests and improvements, that this kind of image analysis could take a more central role in the early screening for the presence of the disease and thus make faster and more accurate diagnosis. 
+
+The performance of the simpler CNN was better than the transferred learning from NAS. This may be an indication that the top layers need fine tuning of their parameters, and perhaps alterations in the architecture and those are the next steps recommended for the improvement of the model. It is important to remember that the dataset shown here is split with a similar amount of observations for COVID-19 patients and for all the other viral pneumoniae and normal subjects. That is not the case in a real scenario and the application of such ML techniques to clinical use is far more complicated.
+
+
+
+```{r bib, include=FALSE, echo=FALSE}
+# create a bib file for the R packages used in this document
+knitr::write_bib(c('base', 'rmarkdown'), file = 'skeleton.bib')
+```
