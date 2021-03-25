@@ -43,7 +43,6 @@ cwd <- getwd()
 
 # For the data images
 image_location <- paste(cwd, "/COVID-19 Radiography Database", sep="")
-  # "https://github.com/KTSC/Recommender-System---MovieLens/tree/master/img/"
 
 # For the figures of the report
 img_path <- paste(getwd(),"/img", sep = "")
@@ -281,9 +280,6 @@ library(keras)
 library(EBImage)
 library(tidyverse)
 
-
-
-# Download the dataset linked to this project at https://drive.google.com/drive/folders/1lBdhIzBnOaHjFkAeI81cqELxcm7E2TZY?usp=sharing
 
 
 
