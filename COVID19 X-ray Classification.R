@@ -34,9 +34,6 @@ library(tidyverse)
 
 
 
-# Download the dataset linked to this project at https://drive.google.com/drive/folders/1lBdhIzBnOaHjFkAeI81cqELxcm7E2TZY?usp=sharing
-
-
 
 # Set the location and get the name of the directories with the images corresponding to the classes
 # For this specific dataset the code below will assign the train and validation folders (with 90% and 10% of the dataset respectively)
